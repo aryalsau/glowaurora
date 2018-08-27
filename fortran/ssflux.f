@@ -143,11 +143,16 @@
 ! Hinteregger contrast ratio method:
 
       IF (iscale .eq. 0) then
+
 !        if (islast .ne. iscale) then
+
           open(unit=1,file='ssflux_hint.dat',status='old')
+
           read(1,*)
+
           do l=lmax,1,-1
             read(1,*) waves(l),wavel(l),rflux(l),scale1(l),scale2(l)
+
           enddo
           close(unit=1)
 !         endif
@@ -178,8 +183,10 @@
 !        if (islast .ne. iscale) then
           open(unit=1,file='ssflux_euvac.dat',status='old')
           read(1,*)
+
           do l=lmax,1,-1
             read(1,*) waves(l),wavel(l),rflux(l),a(l)
+
           enddo
           close(unit=1)
 !        endif
@@ -199,9 +206,13 @@
       if (iscale .eq. 2) then
 !        if (islast .ne. iscale) then
           open(unit=1,file='ssflux_user.dat',status='old')
+
+!	  write(1,*),err
           read(1,*)
+
           do l=lmax,1,-1
             read(1,*) waves(l),wavel(l),uflux(l)
+
           enddo
           close(unit=1)
 !        endif

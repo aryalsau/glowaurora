@@ -15,12 +15,13 @@ fortranfiles=['egrid.f','maxt.f','glow.f','rout.f',
               'etrans.f','exsect.f','ssflux.f','snoem.f','snoemint.f',
               'geomag.f','qback.f','fieldm.f',
               'nrlmsise00.f','iri90.f',
-              'aurora_sub.f','dayglow_sub.f']
+              'aurora_sub.f','dayglow_sub.f','aurora_subn.f','aurora_sub_future.f','dayglow_subn.f']
 
 root='fortran'
 
 fortranpaths = [join(root,f) for f in fortranfiles]
 fortdata = glob(join(root,'*.dat'))
+print(fortdata)
 iridata = glob(join('iri','*.asc'))
 #%% prelim
 ext=[Extension(name='glowfort',

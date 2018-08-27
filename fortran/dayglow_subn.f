@@ -1,6 +1,7 @@
-C Example driver program for GLOW subroutine package - aurora version
+C Example driver program for GLOW subroutine package - dayglow version
 C
 C Stan Solomon, 4/05, 12/14
+C Brian Harding, 10/17
 C
 C This software is part of the GLOW model.  Use is governed by the Open Source
 C Academic Research License Agreement contained in the file glowlicense.txt.
@@ -27,24 +28,24 @@ C NST     number of states produced by photoionization/dissociation
 C NEI     number of states produced by electron impact
 C NF      number of types of auroral fluxes
 C
-      SUBROUTINE AURORA(Z,idate_, ut_, glat_, glong_, f107a_, f107_,
-     &                  f107p,ap,PyPhitop,
+      SUBROUTINE DAYGLOWN(Z,idate_, ut_, glat_, glong_, f107a_, f107_,
+     &                  f107p,ap,PyPhitop,iconj,
      &                  Pyion,Pyecalc,Pypi,Pysi,Pyisr,
-     &                  prate,lrate,PyUV)
+     &                  PyUV)
 
 !      use cglow,only: jmax,NMAJ,NEX,NW,NC,NST,NEI,NF,nbins,lmax,PI
       implicit none
       include 'cglow.h'
 
-      Integer, Intent(In) :: idate_
+      Integer, Intent(In) :: idate_, iconj
       Real,Intent(In) :: Z(JMAX),ut_, glat_, glong_, f107a_, f107_,
      &                  f107p, ap, PyPhitop(nbins,3)
 ! it's 3, not nmaj
 
       Real, Intent(Out)  :: Pyion(JMAX,11), Pyisr(JMAX,nmaj),
-     & Pyecalc(jmax),Pypi(jmax),Pysi(jmax),
-     & PRATE(NEX,JMAX,2), LRATE(NEX,JMAX,2), PyUV(5,jmax)
-!PRATE and LRATE are from GCHEM called by GLOW
+     & Pyecalc(jmax),Pypi(jmax),Pysi(jmax), PyUV(5,jmax)
+     
+      Real PRATE(NEX,JMAX), LRATE(NEX,JMAX)
 !***********************************************************************
 
       real D(8), T(2), SW(25),
@@ -56,7 +57,7 @@ C
       DATA SW/25*1./
 
       integer IDATE, ISCALE, JLOCAL, KCHEM, IERR,
-     & IIMAXX(NBINS)
+     & IIMAXX(NBINS), N
 
       real UT, GLAT, GLONG,
      >    F107, F107A, HLYBR, FEXVIR, HLYA, HEIEW, XUVFAC,
@@ -76,7 +77,8 @@ C
      >    ZXDEN(NEX,JMAX), ZETA(NW,JMAX), ZCETA(NC,NW,JMAX), VCB(NW),
      &   SIGS(NMAJ,NBINS), PE(NMAJ,NBINS), PIN(NMAJ,NBINS),
      >                SIGA(NMAJ,NBINS,NBINS), SEC(NMAJ,NBINS,NBINS),
-     >                SIGEX(NEI,NMAJ,NBINS), SIGIX(NEI,NMAJ,NBINS)
+     >                SIGEX(NEI,NMAJ,NBINS), SIGIX(NEI,NMAJ,NBINS),
+     >    GLATS, GLONGS, XMLONG, XMLAT
      
       real ef,ez,fracO,fracO2,fracN2
 
@@ -104,16 +106,13 @@ C
 C Set other parameters and switches:
 C
       JLOCAL = 0
-      KCHEM = 2
+c      KCHEM = 4
       ISCALE = 1
       XUVFAC = 3.
       HLYBR = 0.
       FEXVIR = 0.
       HLYA = 0.
       HEIEW = 0.
-      ITAIL = 0
-      FMONO = 0.
-      EMONO = 0.
 C
 C Calculate local solar time:
 C
@@ -128,18 +127,18 @@ C
 
         DO J=1,JMAX
           CALL GTD7(IDATE,UT,Z(J),GLAT,GLONG,STL,F107A,F107P,AP,48,D,T)
-          ZO(J) = D(2)
+c          ZO(J) = D(2)
           ! If altitude under 100km and O number density there < 1e7 cm^-3,
           ! replace O density with O2 density there
 !**********************************
 !very important for not getting all-NaN output below 72.50 km!!!
           IF (ZO(J) .LT. 1.E7 .AND. Z(J) .LT. 100.) ZO(J) = D(4)*1.E-7
 !***********************************
-          ZN2(J) = D(3)
-          ZO2(J) = D(4)
+c          ZN2(J) = D(3)
+c          ZO2(J) = D(4)
           ZRHO(J) = D(6)
-          ZNS(J) = D(8)
-          ZTN(J) = T(2)
+c          ZNS(J) = D(8)
+c          ZTN(J) = T(2)
           if (isnan(zo(j)))  stop 'NaN in O+ density'
           if (isnan(zn2(j))) stop 'NaN in N2+ density'
           if (isnan(zo2(j))) stop 'NaN in O2+ density'
@@ -150,7 +149,7 @@ C
 C Call SNOEMINT to obtain NO profile from the Nitric Oxide Empirical
 C Model (NOEM)
 C
-      CALL SNOEMINT(IDATE,GLAT,GLONG,F107,AP,Z,ZTN,ZNO)
+c      CALL SNOEMINT(IDATE,GLAT,GLONG,F107,AP,Z,ZTN,ZNO)
 C
 C
 C Call International Reference Ionosphere-1990 subroutine to get
@@ -172,14 +171,14 @@ C
       CALL IRI90(JF,JMAG,GLAT,GLONG,RZ12,MMDD,STL,Z,JMAX,
      >           'iri/',OUTF,OARR)
       DO J=1,JMAX
-        ZE(J) = OUTF(1,J) / 1.E6
+c        ZE(J) = OUTF(1,J) / 1.E6
         IF (ZE(J) .LT. 100.) ZE(J) = 100.
-        ZTI(J) = OUTF(3,J)
+c        ZTI(J) = OUTF(3,J)
         IF (ZTI(J) .LT. ZTN(J)) ZTI(J) = ZTN(J)
         ZTE(J) = OUTF(4,J)
         IF (ZTE(J) .LT. ZTN(J)) ZTE(J) = ZTN(J)
         ZXDEN(3,J) = ZE(J) * OUTF(5,J)/100.
-        ZXDEN(6,J) = ZE(J) * OUTF(8,J)/100.
+c        ZXDEN(6,J) = ZE(J) * OUTF(8,J)/100.
         ZXDEN(7,J) = ZE(J) * OUTF(9,J)/100.
         if (isnan(ze(j))) stop 'NaN in Ne'
         if (isnan(zti(j)))stop 'NaN in Ti'
@@ -198,28 +197,61 @@ C
 C Call GLOW to calculate ionized and excited species, airglow emission
 C rates, and vertical column brightnesses:
 C
-      CALL GLOW(PRATE(:,:,1),LRATE(:,:,1))
+      CALL GLOW(PRATE,LRATE)
+
+C No need to call GLOW again using calculated electron densities
+C instead of IRI densities, because it makes a negligible effect
+C on airglow, at least for 1304, where it made a 0.4% difference.
+C It makes a difference when there is auroral precipitation, however.
+C    
+C          DO J=1,JMAX
+C            ZE(J)=ECALC(J)
+C            IF (ZE(J) .LT. 100.) ZE(J) = 100.
+C          END DO
+C
+C        CALL GLOW(PRATE, LRATE)
+
+C If iconj==1, then call GLOW at the conjugate point (using the outgoing
+C flux at this point), then call GLOW back at this point (using the outgoing
+C flux at the conjugate point)
+
+      IF (ICONJ .EQ. 1) THEN
+      
+C
+C Find location of conjugate point:
+C
+          GLATS = GLAT
+          GLONGS = GLONG
+          CALL GEOMAG(0,GLONG,GLAT,XMLONG,XMLAT)
+          CALL GEOMAG(1,GLONG,GLAT,XMLONG,-XMLAT)
+C
+C Downward flux at conjugate point = upward flux at location:
+C
+          DO N=1,NBINS
+            PHITOP(N) = UFLX(N,JMAX)
+          END DO
+C
+C Call Glow for conjugate point (same neutral atmosphere):
+C
+          CALL GLOW(PRATE, LRATE)
+C
+C Upward flux at conjugate point = downward flux at location:
+C
+          DO N=1,NBINS
+            PHITOP(N) = UFLX(N,JMAX)
+          END DO
 
 C
-C Set electron densities to calculated values below 200 km, constant
-C above:
+C Call Glow again at location:
 C
-      J200=0
-      DO J=JMAX,1,-1
-        IF (Z(J) .GT. 200.01) J200=J-1
-      END DO
-C
-      DO J=1,JMAX
-        IF (J .LE. J200) ZE(J)=ECALC(J)
-        IF (J .GT. J200) ZE(J)=ECALC(J200)
-        IF (ZE(J) .LT. 100.) ZE(J) = 100.
-      END DO
-C
-C
-C Call GLOW again:
-C
-      CALL GLOW(PRATE(:,:,2),LRATE(:,:,2))
-C
+
+          GLAT = GLATS
+          GLONG = GLONGS
+
+          CALL GLOW(PRATE, LRATE)
+          
+      END IF
+      
 C
 C Output section:
 C
@@ -250,11 +282,9 @@ C
         totpi = tpi(1) + tpi(2) + tpi(3) + phono(1,j)
         totsi = sion(1,j) + sion(2,j) + sion(3,j)
 
-        if (isnan(totpi)) then
-        write(0,*) 'NaN in photoionization, set to 0'
-        totpi=0
+        if (isnan(totpi)) write(0,*) 'NaN in photoionization'
         if (isnan(totsi)) then
-         write(0,*) 'NaN in impact ionization at altitude, set to 0',z(j) 
+         write(0,*) 'NaN in impact ionization at altitude',z(j) 
         end if
 
         Pypi(j) = totpi
@@ -285,4 +315,4 @@ C
 
       CALL ROUT('rt.out',EF,EZ,ITAIL,FRACO,FRACO2,FRACN2,PyUV)
 
-      END SUBROUTINE AURORA
+      END SUBROUTINE DAYGLOWN

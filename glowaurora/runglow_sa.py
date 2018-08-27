@@ -30,7 +30,7 @@ GRIDERR = 'gridaurora is required for this program.  pip install gridaurora.'
 def runglowaurora(params:dict, z_km:np.ndarray=None) -> xarray.Dataset:
     """ Runs Fortran GLOW program and collects results in friendly arrays with metadata. """
     #%% (-2) check/process user inputs
-    assert isinstance(params['flux'],(float,int,np.ndarray))
+    assert isinstance(params['fl'],(float,int,np.ndarray))
     assert isinstance(params['E0'],   (float,'float32',int))
     assert isinstance(params['t0'],   (datetime,str))
     assert isinstance(params['glat'], (float,int))
@@ -48,9 +48,24 @@ def runglowaurora(params:dict, z_km:np.ndarray=None) -> xarray.Dataset:
     #glowfort.cglow.kchem=params['kchem']
     glowfort.cglow.kchem=params['kchem']
     print(glowfort.cglow.kchem)
+    glowfort.cglow.zo=params['O']/1e6 #read provided O density
+    glowfort.cglow.zo2=params['O2']/1e6
+    glowfort.cglow.zn2=params['N2']/1e6
+    glowfort.cglow.zn=params['N']/1e6
+    glowfort.cglow.zno=params['NO']/1e6
+    # glowfort.cglow.zrho=params['Total']/1e6
+    glowfort.cglow.zti=params['Ti']
+    glowfort.cglow.zte=params['Te']
+    glowfort.cglow.ztn=params['Tn']
+    glowfort.cglow.zxden[2,:] = params['nO+']/1e6
+    glowfort.cglow.zxden[3,:] = params['N+']/1e6
+    glowfort.cglow.zxden[5,:] = params['nO2+']/1e6
+    glowfort.cglow.zxden[6,:] = params['nNO+']/1e6
+    glowfort.cglow.ze=params['ne']/1e6
+    #print(glowfort.cglow.ze)
     chdir(glowpath) #FIXME: hack for path issue
 #%% flux grid / date
-    eflux = np.atleast_1d(params['flux'])
+    eflux = np.atleast_1d(params['fl'])
 
     yeardoy,utsec = datetime2yd(params['t0'])[:2]
 #%% (0) define altitude grid [km]
@@ -59,24 +74,14 @@ def runglowaurora(params:dict, z_km:np.ndarray=None) -> xarray.Dataset:
             z_km = glowalt()
         else:
             raise ImportError(GRIDERR)
-    glowfort.cglow.zo=params['O']/1e6 #read provided O density
-    glowfort.cglow.zo2=params['O2']/1e6
-    glowfort.cglow.zn=params['N']/1e6
-    glowfort.cglow.zo=params['N2']/1e6
-    glowfort.cglow.zno=params['NO']/1e6
-    #glowfort.cglow.zrho=params['Total']/1e6
-    glowfort.cglow.ze=params['ne']/1e6
-    glowfort.cglow.zti=params['Ti']
-    glowfort.cglow.zte=params['Te']
-    glowfort.cglow.ztn=params['Tn']
-    print(glowfort.cglow.ze)
 #%% (1) setup flux at top of ionosphere
     ener,dE = glowfort.egrid()
+    #phitop = np.zeros_like(ener)
 
     if eflux.size == 1:
         logging.info('generating maxwellian input differential number flux spectrum')
         # maxwellian input PhiTop at top of ionosphere
-        phitop = glowfort.maxt(eflux,params['E0'],ener, dE, itail=0, fmono=0, emono=0)
+        phitop = glowfort.maxt(params['fl'],params['E0'],ener, dE, itail=0, fmono=0, emono=0)
     elif eflux.size > 1: #eigenprofile generation, one non-zero bin at a time
         logging.info('running in eigenprofile mode')
         e0ind = find_nearest(ener,params['e0'])[0] # FIXME should we interpolate instead? Maybe not, as long as we're consistent ref. Semeter 2006
@@ -84,15 +89,26 @@ def runglowaurora(params:dict, z_km:np.ndarray=None) -> xarray.Dataset:
         phitop[e0ind] = ener[e0ind] #value in glow grid closest to zett grid
     else:
         return ValueError('I do not understand your electron flux input. Should be scalar or vector')
-
+    #print(phitop)
     phi = np.stack((ener,dE,phitop), 1)   # Nalt x 3
     assert phi.shape[1] == 3
     #glowfort.cglow.zz=z_km*1e5
-    #glowfort.cglow.znd[:]=0.
+    
+    glowfort.cglow.znd[:]=0.
+    #glowfort.cglow.ze = outf['ne']/1e6 # M-3 -> CM-3
+    glowfort.cglow.ze[glowfort.cglow.ze<100.] = 100.
+
+    #glowfort.cglow.zti = outf['Ti']
+    i = glowfort.cglow.zti<glowfort.cglow.ztn
+    glowfort.cglow.zti[i] = glowfort.cglow.ztn[i]
+
+    #glowfort.cglow.zte = outf['Te']
+    i = glowfort.cglow.zte<glowfort.cglow.ztn
+    glowfort.cglow.zte[i] = glowfort.cglow.ztn[i]
 #%% (2) msis,iri,glow model
     ion,ecalc,photI,ImpI,isr,prate,lrate,UV = glowfort.aurora1(z_km,yeardoy,utsec,params['glat'],params['glon']%360,
                                                               params['f107a'],params['f107'],params['f107p'],params['Ap'],phi)
-
+    print(glowfort.cglow.efrac)
 #%% (3) collect outputs
     zeta=glowfort.cglow.zeta.T #columns 11:20 are identically zero
 
@@ -154,7 +170,7 @@ def runglowaurora(params:dict, z_km:np.ndarray=None) -> xarray.Dataset:
     return sim
 
 
-def rundayglow(t0,glat,glon,f107a,f107,f107p,ap, conj=True):
+def rundayglow(z,params:dict, conj=False):
     '''
     Run GLOW for no auroral input, to simulate Dayglow.
 
@@ -165,18 +181,43 @@ def rundayglow(t0,glat,glon,f107a,f107,f107p,ap, conj=True):
     '''
 
 #%% (-2) check/process user inputs
-    assert isinstance(t0,   (datetime,str))
-    assert isinstance(glat, (float,int))
-    assert isinstance(glon, (float,int))
+#    assert isinstance(t0,   (datetime,str))
+    assert isinstance(params['glat'], (float,int))
+    assert isinstance(params['glon'], (float,int))
+    #%% (-1) if no manual f10.7 and ap, autoload by date
+    if not 'f107a' in params or params['f107a'] is None:
+        if readmonthlyApF107 is None:
+            raise ImportError(GRIDERR)
+        f107Ap = readmonthlyApF107(params['t0'])
+        params['f107a'] = params['f107p'] 
+#= f107Ap['f107s']
+        params['f107']  = f107Ap['f107o']
+        params['Ap']    = (f107Ap['Apo'],)*7
 
     chdir(glowpath) #FIXME: hack for path issue
 
 #%% flux grid / date
 
-    yd,utsec = datetime2yd(t0)[:2]
+    yd,utsec = datetime2yd(params['t0'])[:2]
 #%% (0) define altitude grid [km]
     #z = glowalt()
-    z = np.concatenate((range(30,110,1),np.logspace(np.log10(110),np.log10(1200),90)))
+    #z = np.concatenate((range(30,110,1),np.logspace(np.log10(110),np.log10(1200),90)))
+    glowfort.cglow.kchem=params['kchem']
+    print(glowfort.cglow.kchem)
+    glowfort.cglow.zo=params['O']/1e6 #read provided O density
+    glowfort.cglow.zo2=params['O2']/1e6
+    glowfort.cglow.zn2=params['N2']/1e6
+    glowfort.cglow.zns=params['N']/1e6
+    glowfort.cglow.zno=params['NO']/1e6
+    # glowfort.cglow.zrho=params['Total']/1e6
+    glowfort.cglow.zti=params['Ti']
+    glowfort.cglow.zte=params['Te']
+    glowfort.cglow.ztn=params['Tn']
+    glowfort.cglow.zxden[2,:] = params['nO+']/1e6
+    #glowfort.cglow.zxden[3,:] = params['N+']/1e6
+    glowfort.cglow.zxden[5,:] = params['nO2+']/1e6
+    glowfort.cglow.zxden[6,:] = params['nNO+']/1e6
+    glowfort.cglow.ze=params['ne']/1e6
 
 #%% (1) setup external flux at top of ionosphere. Set it to zero. Photoelectron flux from
 #       conjugate hemisphere will be calculated internally, if conj=True.
@@ -186,8 +227,8 @@ def rundayglow(t0,glat,glon,f107a,f107,f107p,ap, conj=True):
 
 #%% (2) msis,iri,glow model
     iconj = int(conj) # convert boolean to int for passing to Fortran.
-    ion,ecalc,photI,ImpI,isr,UV = glowfort.dayglow(z,yd,utsec,glat,glon%360,
-                                             f107a,f107,f107p,ap,phi,iconj)
+    ion,ecalc,photI,ImpI,isr,UV = glowfort.dayglown(z,yd,utsec,params['glat'],params['glon']%360,
+                                             params['f107a'],params['f107'],params['f107p'],params['Ap'],phi,iconj)
 
 #%% handle the outputs including common blocks
     zeta=glowfort.cglow.zeta.T #columns 11:20 are identically zero
@@ -216,9 +257,9 @@ def rundayglow(t0,glat,glon,f107a,f107,f107p,ap, conj=True):
                        coords={'eV':phi[:,0]},
                        data=phi[:,2])
 
-    sim['zceta'] = xarray.DataArray(dims=['z_km','wavelength_nm','type'],
-                      coords={'z_km':z, 'wavelength_nm':lamb[:11]},
-                    data=glowfort.cglow.zceta.T[:,:11,:])  #Nalt x Nwavelengths  xNproductionEmissions
+    # sim['zceta'] = xarray.DataArray(dims=['z_km','wavelength_nm','type'],
+    #                   coords={'z_km':z, 'wavelength_nm':lamb[:11]},
+    #                 data=glowfort.cglow.zceta.T[:,:11,:])  #Nalt x Nwavelengths  xNproductionEmissions
 
 
     sim.attrs['sza'] = np.degrees(glowfort.cglow.sza)

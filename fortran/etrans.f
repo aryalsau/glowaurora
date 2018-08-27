@@ -78,7 +78,7 @@ C
 
       use, intrinsic :: iso_fortran_env, only : stdout=>output_unit, 
      &                                          stderr=>error_unit
-!      implicit none
+      implicit none
       INCLUDE 'cglow.h'
 
       logical isfinite

@@ -27,7 +27,7 @@ C NST     number of states produced by photoionization/dissociation
 C NEI     number of states produced by electron impact
 C NF      number of types of auroral fluxes
 C
-      SUBROUTINE AURORA(Z,Pyion,Pyecalc,Pypi,Pysi,Pyisr,
+      SUBROUTINE AURORAN(Z,Pyion,Pyecalc,Pypi,Pysi,Pyisr,
      &                  idate_, ut_, glat_, glong_, f107a_, f107_,
      &                  PyPhitop)
 
@@ -169,4 +169,4 @@ C
 !
 !     CALL ROUT('rt.out',EF,EZ,ITAIL,FRACO,FRACO2,FRACN2)
 !
-      END SUBROUTINE AURORA
+      END SUBROUTINE AURORAN
